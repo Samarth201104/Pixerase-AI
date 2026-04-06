@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="description" content="Pixerase.AI - Remove backgrounds and objects from images using advanced AI">
+    <title>Pixerase.AI — AI Background & Object Removal</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="logo">
+            <span class="logo-icon">✨</span>
+            <span class="logo-text">Pixerase.AI</span>
+        </div>
+        <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+            <span class="theme-icon">🌙</span>
+            <span>Dark/Light</span>
+        </button>
+    </nav>
+
+    <!-- Main Application Container -->
+    <main class="app-container">
+        <div class="editor-grid">
+            <!-- LEFT PANEL: Controls -->
+            <aside class="left-panel">
+                <!-- Upload Section -->
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📸</div>
+                    <p class="upload-title">Drop image here or click to browse</p>
+                    <p class="upload-hint">JPG, PNG, WEBP (Max 10MB)</p>
+                    <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp" hidden />
+                </div>
+
+                <!-- Mode Toggle -->
+                <div class="mode-toggle">
+                    <button class="mode-btn" data-mode="bg" id="modeBgBtn">
+                        <span>🖼️</span>
+                        <span>Background Removal</span>
+                    </button>
+                    <button class="mode-btn" data-mode="object" id="modeObjectBtn">
+                        <span>✂️</span>
+                        <span>Object Removal</span>
+                    </button>
+                </div>
+
+                <!-- Object Removal Tools (Hidden by default) -->
+                <div class="tool-group" id="objectTools" style="display: none;">
+                    <div class="tool-header">
+                        <h3>Mask Tools</h3>
+                        <p class="tool-desc">Paint over objects you want to remove</p>
+                    </div>
+                    
+                    <div class="tool-row">
+                        <button id="brushToolBtn" class="icon-btn tool-active">
+                            <span>🖌️</span>
+                            <span>Brush</span>
+                        </button>
+                        <button id="circleToolBtn" class="icon-btn">
+                            <span>⭕</span>
+                            <span>Circle</span>
+                        </button>
+                        <div class="tool-spacer"></div>
+                        <button id="undoMaskBtn" class="icon-btn" title="Undo">
+                            <span>↩️</span>
+                            <span>Undo</span>
+                        </button>
+                        <button id="redoMaskBtn" class="icon-btn" title="Redo">
+                            <span>↪️</span>
+                            <span>Redo</span>
+                        </button>
+                    </div>
+
+                    <div class="brush-control">
+                        <label class="slider-label">
+                            <span>Brush Size</span>
+                            <span id="brushSizeVal">24px</span>
+                        </label>
+                        <input type="range" id="brushSize" min="5" max="60" value="24" step="1">
+                    </div>
+
+                    <div class="mask-actions">
+                        <button id="clearMaskBtn" class="btn-outline-small">
+                            🧹 Clear Mask
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="action-buttons">
+                    <button id="processBtn" class="btn-primary">
+                        <span>✨</span>
+                        <span>Process Image</span>
+                    </button>
+                    <button id="downloadBtn" class="btn-primary btn-accent" disabled>
+                        <span>⬇️</span>
+                        <span>Download</span>
+                    </button>
+                    <button id="resetBtn" class="btn-outline">
+                        <span>⟳</span>
+                        <span>Reset</span>
+                    </button>
+                </div>
+
+                <!-- API Status -->
+                <div class="api-status" id="apiStatus">
+                    <div class="status-indicator offline"></div>
+                    <span id="statusText">Backend: Not Connected</span>
+                </div>
+            </aside>
+
+            <!-- RIGHT PANEL: Preview -->
+            <div class="right-panel">
+                <div class="image-preview-container" id="previewContainer">
+                    <div class="canvas-wrapper" id="canvasWrapper">
+                        <canvas id="mainCanvas" width="800" height="600"></canvas>
+                        <canvas id="maskCanvas" width="800" height="600"></canvas>
+                    </div>
+                    <div class="image-placeholder" id="imagePlaceholder">
+                        <div class="placeholder-content">
+                            <div class="placeholder-icon">🖼️</div>
+                            <p>No image loaded</p>
+                            <p class="placeholder-hint">Upload an image to start editing</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Before/After Comparison Slider -->
+                <div class="comparison-slider" id="compareSlider" style="display: none;">
+                    <span class="compare-label">Before</span>
+                    <div class="slider-container">
+                        <input type="range" id="sliderCompare" min="0" max="100" value="100" class="compare-input">
+                        <div class="slider-track"></div>
+                    </div>
+                    <span class="compare-label">After</span>
+                </div>
+
+                <!-- Bottom Status Bar -->
+                <div class="bottom-bar">
+                    <div class="status-message" id="statusMsg">
+                        <span class="status-icon">✅</span>
+                        <span>Ready to edit</span>
+                    </div>
+                    <div class="image-info" id="imageInfo" style="display: none;">
+                        <span id="imageDimensions"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <h3>Processing with AI</h3>
+            <p>This may take a few seconds...</p>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="{{ url_for('static', filename='js/api-service.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/image-processor.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/canvas-manager.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/ui-controller.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
