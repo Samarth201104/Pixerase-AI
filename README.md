@@ -44,12 +44,14 @@ Pixerase-AI is an advanced AI-powered image editing tool designed for seamless b
    *Note: requirements.txt contains the exact package versions as installed in the development environment (generated via `pip freeze`).*
 
 4. **Download Pre-trained Models**:
-   - Place the required model files (e.g., `u2net.pth`, `migan_512_places2.pt`) in the `models/` directory.
-   - Ensure the models match the configurations in `configs/`.
+   - Download the required model files and place them in the appropriate directories:
+     - U²-Net model (`u2net.pth`) → `background/models/`
+     - MI-GAN models (e.g., `migan_512_places2.pt`) → `object/models/`
+   - Ensure the models match the configurations in `object/configs/`.
 
    ### 🔹 MI-GAN (Object Removal - Inpainting)
    Download from:
-   https://drive.google.com/drive/folders/1xNtvN2lto0p5yFKOEEg9RioMjGrYM74w
+   https://github.com/Picsart-AI-Research/MI-GAN
 
    ### 🔹 U²-Net (Background Removal)
    Download from:
@@ -72,29 +74,29 @@ Pixerase-AI is an advanced AI-powered image editing tool designed for seamless b
 
 - **Background Removal**:
   ```bash
-  python scripts/app_autoremoval.py --input path/to/image.jpg --output path/to/output.jpg
+  python object/scripts/app_autoremoval.py --input path/to/image.jpg --output path/to/output.jpg
   ```
 
 - **Object Inpainting**:
   ```bash
-  python object/main.py --config configs/experiment/comodgan_places256.yaml --input path/to/image.jpg --mask path/to/mask.jpg --output path/to/output.jpg
+  python object/main.py --config object/configs/experiment/comodgan_places256.yaml --input path/to/image.jpg --mask path/to/mask.jpg --output path/to/output.jpg
   ```
 
 - **Evaluation**:
   ```bash
-  python scripts/evaluate_fid_lpips.py --real_dir path/to/real_images --fake_dir path/to/generated_images
+  python object/scripts/evaluate_fid_lpips.py --real_dir path/to/real_images --fake_dir path/to/generated_images
   ```
 
 - **Export to ONNX**:
   ```bash
-  python scripts/create_onnx_pipeline.py --model_path models/u2net.pth --output_path outputs/u2net.onnx
+  python object/scripts/create_onnx_pipeline.py --model_path background/models/u2net.pth --output_path outputs/u2net.onnx
   ```
 
 ### Configuration
 
-- Modify experiment configurations in `configs/experiment/`.
-- Adjust model settings in `configs/model/`.
-- Dataset configurations are in `configs/dataset/`.
+- Modify experiment configurations in `object/configs/experiment/`.
+- Adjust model settings in `object/configs/model/`.
+- Dataset configurations are in `object/configs/dataset/`.
 
 ## Project Structure
 
@@ -102,25 +104,75 @@ Pixerase-AI is an advanced AI-powered image editing tool designed for seamless b
 pixerase-ai/
 ├── app.py                          # Main Flask application
 ├── requirements.txt                # Python dependencies
+├── .gitignore                      # Git ignore file
 ├── background/                     # Background removal module
+│   ├── __init__.py
 │   ├── background_removal.py
+│   ├── model/                      # U2Net model implementation
+│   ├── models/                     # Pre-trained U2Net model weights
 │   ├── model_loader.py
 │   └── utils.py
-├── model/                          # U2Net model implementation
-├── models/                         # Pre-trained model weights
+├── backgrounds/                    # Template background images
 ├── frontend/                       # Web interface
 │   ├── css/
+│   │   └── styles.css
 │   ├── js/
+│   │   ├── api-service.js
+│   │   ├── app.js
+│   │   ├── canvas-manager.js
+│   │   ├── image-processor.js
+│   │   └── ui-controller.js
 │   └── templates/
+│       └── index.html
 ├── object/                         # Object inpainting module
 │   ├── infer.py
 │   ├── main.py
-│   ├── configs/
-│   ├── lib/
-│   └── scripts/
-├── scripts/                        # Utility scripts
+│   ├── configs/                    # Configuration files
+│   │   ├── dataset/
+│   │   │   ├── ffhq.yaml
+│   │   │   └── places2.yaml
+│   │   ├── experiment/
+│   │   │   ├── ablation_dw_places256.yaml
+│   │   │   ├── ...
+│   │   │   └── comodgan_places512.yaml
+│   │   └── model/
+│   │       ├── comodgan.yaml
+│   │       └── migan.yaml
+│   ├── dnnlib/
+│   │   ├── __init__.py
+│   │   └── util.py
+│   ├── examples/                   # Example datasets
+│   │   ├── messi/
+│   │   │   ├── images/
+│   │   │   ├── masks/
+│   │   │   └── results/
+│   │   └── places2_512_object/
+│   │       ├── images/
+│   │       ├── masks/
+│   │       └── results/
+│   ├── lib/                        # Core library
+│   │   ├── __init__.py
+│   │   ├── cfg_helper.py
+│   │   ├── cfg_holder.py
+│   │   ├── data_factory/
+│   │   ├── evaluator/
+│   │   ├── experiments/
+│   │   ├── log_service.py
+│   │   ├── model_zoo/
+│   │   └── utils.py
+│   ├── models/                     # Pre-trained MI-GAN model weights
+│   ├── scripts/                    # Utility scripts
+│   │   ├── app_autoremoval.py
+│   │   ├── calculate_flops.py
+│   │   ├── create_onnx_pipeline.py
+│   │   ├── demo.py
+│   │   ├── evaluate_fid_lpips.py
+│   │   ├── export_inference_model.py
+│   │   └── generate_masks.py
+│   └── torch_utils/                # PyTorch utilities
 ├── outputs/                        # Processed outputs
 ├── uploads/                        # Uploaded files
+├── venv/                           # Virtual environment (not in repo)
 └── README.md                       # This file
 ```
 
