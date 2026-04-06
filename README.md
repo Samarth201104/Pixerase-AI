@@ -49,7 +49,7 @@ Pixerase-AI is an advanced AI-powered image editing tool designed for seamless b
 
    ### 🔹 MI-GAN (Object Removal - Inpainting)
    Download from:
-   https://github.com/Picsart-AI-Research/MI-GAN
+   https://drive.google.com/drive/folders/1xNtvN2lto0p5yFKOEEg9RioMjGrYM74w
 
    ### 🔹 U²-Net (Background Removal)
    Download from:
