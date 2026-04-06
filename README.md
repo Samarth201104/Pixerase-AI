@@ -47,6 +47,14 @@ Pixerase-AI is an advanced AI-powered image editing tool designed for seamless b
    - Place the required model files (e.g., `u2net.pth`, `migan_512_places2.pt`) in the `models/` directory.
    - Ensure the models match the configurations in `configs/`.
 
+   ### 🔹 MI-GAN (Object Removal - Inpainting)
+   Download from:
+   https://github.com/Picsart-AI-Research/MI-GAN
+
+   ### 🔹 U²-Net (Background Removal)
+   Download from:
+   https://drive.google.com/uc?id=1ao1ovG1Qtx4b7EoskHXmi2E9rp5CHLcZ
+
 ## Usage
 
 ### Running the Web Application
