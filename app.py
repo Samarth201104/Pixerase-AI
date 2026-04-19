@@ -44,20 +44,39 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using device: {DEVICE}")
 
 # ==================== LOAD MODELS ====================
-print("Loading models...")
-try:
-    bg_model = load_u2net("background/models/u2net.pth", device=DEVICE)
-    print("✅ Background model loaded")
-except Exception as e:
-    print(f"⚠️ Background model load error: {e}")
-    bg_model = None
+# print("Loading models...")
+# try:
+#     bg_model = load_u2net("background/models/u2net.pth", device=DEVICE)
+#     print("✅ Background model loaded")
+# except Exception as e:
+#     print(f"⚠️ Background model load error: {e}")
+#     bg_model = None
 
-try:
-    migan_model = load_object_model("object/models/migan_512_places2.pt", device=DEVICE)
-    print("✅ Object removal model loaded")
-except Exception as e:
-    print(f"⚠️ Object removal model load error: {e}")
-    migan_model = None
+# try:
+#     migan_model = load_object_model("object/models/migan_512_places2.pt", device=DEVICE)
+#     print("✅ Object removal model loaded")
+# except Exception as e:
+#     print(f"⚠️ Object removal model load error: {e}")
+#     migan_model = None
+
+
+bg_model = None
+migan_model = None
+
+def get_bg_model():
+    global bg_model
+    if bg_model is None:
+        print("Loading Background Model...")
+        bg_model = load_u2net("background/models/u2net.pth", device=DEVICE)
+    return bg_model
+
+def get_migan_model():
+    global migan_model
+    if migan_model is None:
+        print("Loading Object Model...")
+        migan_model = load_object_model("object/models/migan_512_places2.pt", device=DEVICE)
+    return migan_model
+
 
 # ==================== HEALTH CHECK ====================
 @app.route("/api/health", methods=["GET"])
@@ -66,8 +85,8 @@ def health_check():
         "status": "ok",
         "message": "Pixerase.AI Backend is running",
         "models": {
-            "background": bg_model is not None,
-            "object": migan_model is not None
+            "background": True,
+            "object": True
         }
     })
 
@@ -76,8 +95,7 @@ def health_check():
 def remove_background():
     """Remove background from image"""
     try:
-        if bg_model is None:
-            return jsonify({"error": "Background model not loaded"}), 503
+        model = get_bg_model()
         
         file = request.files.get("image")
         if not file:
@@ -100,7 +118,7 @@ def remove_background():
             bg_image = load_template_background(bg_template, TEMPLATE_BG)
         
         # Process background removal
-        mask = predict_mask(bg_model, pil_image)
+        mask = predict_mask(model, pil_image)
         refined_mask = refine_mask(mask)
         result = composite_foreground_with_bg(pil_image, refined_mask, bg_image)
         
@@ -121,8 +139,7 @@ def remove_background():
 def remove_object():
     """Remove objects from image using mask"""
     try:
-        if migan_model is None:
-            return jsonify({"error": "Object removal model not loaded"}), 503
+        model = get_migan_model()
         
         image_file = request.files.get("image")
         mask_file = request.files.get("mask")
@@ -147,7 +164,7 @@ def remove_object():
         
         # Run GAN inpainting
         run_migan_inference(
-            migan_model, 
+            model, 
             input_path, 
             final_mask_path, 
             output_path, 
