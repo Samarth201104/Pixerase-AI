@@ -217,4 +217,5 @@ if __name__ == "__main__":
     print(f"✅ Object Model: {'Loaded' if migan_model else 'Not Loaded'}")
     print("="*50 + "\n")
     
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)

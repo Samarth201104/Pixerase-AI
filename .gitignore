@@ -1,13 +1,7 @@
 venv/
 __pycache__/
 *.pyc
-.env
-
-# Models (VERY IMPORTANT)
-models/
-*.pth
-*.pt
-
-# Outputs
 uploads/
 outputs/
+*.pth
+*.pt
