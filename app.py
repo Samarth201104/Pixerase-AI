@@ -1,11 +1,11 @@
 import os
 import uuid
 import torch
-from flask import Flask, request, send_file, jsonify
+import logging
+from flask import Flask, request, send_file, jsonify, render_template
 from flask_cors import CORS
 from PIL import Image
 import numpy as np
-from flask import render_template
 
 # Background imports
 from background.model_loader import load_u2net, predict_mask
@@ -24,11 +24,14 @@ from object.infer import (
 )
 
 # ==================== FLASK SETUP ====================
+logging.basicConfig(level=logging.INFO)
 app = Flask(
     __name__,
     template_folder="frontend/templates",
     static_folder="frontend"
 )
+# Production config
+app.config.update(ENV='production', DEBUG=False)
 CORS(app)  # Enable CORS for all routes
 
 # ==================== PATHS ====================
@@ -41,39 +44,23 @@ os.makedirs(OUTPUT, exist_ok=True)
 os.makedirs(TEMPLATE_BG, exist_ok=True)
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"Using device: {DEVICE}")
+app.logger.info(f"Using device: {DEVICE}")
 
 # ==================== LOAD MODELS ====================
-# print("Loading models...")
-# try:
-#     bg_model = load_u2net("background/models/u2net.pth", device=DEVICE)
-#     print("✅ Background model loaded")
-# except Exception as e:
-#     print(f"⚠️ Background model load error: {e}")
-#     bg_model = None
-
-# try:
-#     migan_model = load_object_model("object/models/migan_512_places2.pt", device=DEVICE)
-#     print("✅ Object removal model loaded")
-# except Exception as e:
-#     print(f"⚠️ Object removal model load error: {e}")
-#     migan_model = None
-
-
 bg_model = None
 migan_model = None
 
 def get_bg_model():
     global bg_model
     if bg_model is None:
-        print("Loading Background Model...")
+        app.logger.info("Loading Background Model...")
         bg_model = load_u2net("background/models/u2net.pth", device=DEVICE)
     return bg_model
 
 def get_migan_model():
     global migan_model
     if migan_model is None:
-        print("Loading Object Model...")
+        app.logger.info("Loading Object Model...")
         migan_model = load_object_model("object/models/migan_512_places2.pt", device=DEVICE)
     return migan_model
 
@@ -131,7 +118,7 @@ def remove_background():
         return send_file(output_path, mimetype="image/png")
         
     except Exception as e:
-        print(f"Error in remove_background: {str(e)}")
+        app.logger.exception("Error in remove_background")
         return jsonify({"error": str(e)}), 500
 
 # ==================== OBJECT REMOVAL API ====================
@@ -180,7 +167,7 @@ def remove_object():
         return send_file(output_path, mimetype="image/png")
         
     except Exception as e:
-        print(f"Error in remove_object: {str(e)}")
+        app.logger.exception("Error in remove_object")
         return jsonify({"error": str(e)}), 500
 
 # ==================== UNIFIED API (Handles both modes) ====================
@@ -198,7 +185,7 @@ def process_image():
             return jsonify({"error": "Invalid mode. Use 'background' or 'object'"}), 400
             
     except Exception as e:
-        print(f"Error in process_image: {str(e)}")
+        app.logger.exception("Error in process_image")
         return jsonify({"error": str(e)}), 500
 
 # ==================== TEMPLATE BACKGROUNDS API ====================
@@ -221,18 +208,19 @@ def get_templates():
                     })
         return jsonify({"templates": templates})
     except Exception as e:
+        app.logger.exception("Error listing templates")
         return jsonify({"error": str(e)}), 500
 
 # ==================== RUN SERVER ====================
 if __name__ == "__main__":
-    print("\n" + "="*50)
-    print("🚀 Pixerase.AI Backend Server")
-    print("="*50)
-    print(f"📍 Server running at: http://localhost:5000")
-    print(f"🔧 Device: {DEVICE}")
-    print(f"✅ Background Model: {'Loaded' if bg_model else 'Not Loaded'}")
-    print(f"✅ Object Model: {'Loaded' if migan_model else 'Not Loaded'}")
-    print("="*50 + "\n")
+    app.logger.info("\n" + "="*50)
+    app.logger.info("🚀 Pixerase.AI Backend Server")
+    app.logger.info("="*50)
+    app.logger.info(f"📍 Server running at: http://localhost:{os.environ.get('PORT', 10000)}")
+    app.logger.info(f"🔧 Device: {DEVICE}")
+    app.logger.info(f"✅ Background Model: {'Loaded' if bg_model else 'Not Loaded'}")
+    app.logger.info(f"✅ Object Model: {'Loaded' if migan_model else 'Not Loaded'}")
+    app.logger.info("="*50 + "\n")
     
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, debug=False)
