@@ -3,7 +3,7 @@
  */
 
 const API_CONFIG = {
-    BASE_URL: 'http://localhost:5000',
+    BASE_URL: 'https://pixerase-ai.onrender.com',
     ENDPOINTS: {
         PROCESS: '/api/process',
         HEALTH: '/api/health'
