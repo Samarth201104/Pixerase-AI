@@ -30,21 +30,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // Listen for API status changes
     window.addEventListener('apiStatusChange', (event) => {
-        const { renderConnected } = event.detail;
-        console.log(`Render API Status: ${renderConnected ? 'Connected' : 'Disconnected'}`);
-        
-        if (!renderConnected && window.uiController) {
-            window.uiController.showStatus(
-                'Background removal service not connected. Please check the Render deployment.',
-                '🔌'
-            );
-        }
+        const { hfConnected } = event.detail;
+        console.log(`HF Spaces API Status: ${hfConnected ? 'Connected' : 'Disconnected'}`);
     });
     
-    // Check API health after initialization
+    // Check API status after initialization
     setTimeout(() => {
         if (window.apiService) {
-            window.apiService.checkRenderHealth();
+            window.apiService.checkHFConnection();
         }
     }, 1000);
     

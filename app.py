@@ -1,13 +1,13 @@
 import os
+import io
 import uuid
 import logging
 import threading
 
 import torch
 import gdown
-from flask import Flask, request, send_file, jsonify, render_template
-from flask_cors import CORS
 from PIL import Image
+import gradio as gr
 
 # Project-specific model loaders
 from background.model_loader import load_u2net, predict_mask
@@ -24,39 +24,20 @@ from object.infer import (
 )
 
 # ==================== DEPLOYMENT CONFIG ====================
-# Check deployment target
-DEPLOYMENT_TARGET = os.environ.get("DEPLOYMENT_TARGET", "development")  # "render", "huggingface", or "development"
+# Deployment target is now primarily Hugging Face Spaces
+DEPLOYMENT_TARGET = os.environ.get("DEPLOYMENT_TARGET", "huggingface")  # "huggingface" or "development"
 
 # ==================== CONFIG & LOGGING ====================
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("pixerase")
 
 # Deployment-specific optimizations
-if DEPLOYMENT_TARGET == "render":
-    # Render-specific memory optimizations
-    torch.set_num_threads(int(os.environ.get("TORCH_THREADS", "1")))
-    torch.set_grad_enabled(False)
-    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
-    try:
-        torch.backends.cudnn.enabled = False
-    except Exception:
-        pass
-elif DEPLOYMENT_TARGET == "huggingface":
-    # Hugging Face Spaces optimizations
-    torch.set_num_threads(int(os.environ.get("TORCH_THREADS", "1")))
-    torch.set_grad_enabled(False)
-    try:
-        torch.backends.cudnn.enabled = False
-    except Exception:
-        pass
-else:
-    # Development mode
-    torch.set_num_threads(int(os.environ.get("TORCH_THREADS", "1")))
-    torch.set_grad_enabled(False)
-    try:
-        torch.backends.cudnn.enabled = False
-    except Exception:
-        pass
+torch.set_num_threads(int(os.environ.get("TORCH_THREADS", "1")))
+torch.set_grad_enabled(False)
+try:
+    torch.backends.cudnn.enabled = False
+except Exception:
+    pass
 
 # Directories
 UPLOAD = "uploads"
@@ -187,15 +168,9 @@ def prepare_models():
         logger.exception("Unexpected error while preparing models")
 
 
-# Start model preparation in a background thread during import so Gunicorn master can spawn workers quickly,
-# but ensure models are loaded before first request if needed.
+# Start model preparation in a background thread
 _model_thread = threading.Thread(target=prepare_models, daemon=True)
 _model_thread.start()
-
-# ==================== FLASK SETUP ====================
-app = Flask(__name__, template_folder="frontend/templates", static_folder="frontend")
-app.config.update(ENV='production', DEBUG=False)
-CORS(app)
 
 # ==================== HELPERS ====================
 
@@ -213,44 +188,29 @@ def get_migan_model():
     if migan_model is None:
         logger.info("Object model not loaded yet; attempting to prepare synchronously")
         prepare_models()
+    return migan_model 
+    prepare_models()
     return migan_model
 
-# ==================== ROUTES ====================
-@app.route("/api/health", methods=["GET"])
-def health_check():
-    return jsonify({
-        "status": "ok",
-        "message": "Pixerase.AI Backend is running",
-        "models": {
-            "background": bool(bg_model),
-            "object": bool(migan_model)
-        }
-    })
 
+# ==================== GRADIO PROCESSING FUNCTIONS ====================
 
-@app.route("/api/remove-background", methods=["POST"])
-def remove_background():
-    """Remove background from image"""
+def remove_background_gradio(image: Image.Image, bg_template: str = None) -> Image.Image:
+    """Remove background from image (Gradio version)"""
     try:
         model = get_bg_model()
         if model is None:
-            return jsonify({"error": "Background model not available"}), 503
+            raise gr.Error("Background model not available. Please try again later.")
 
-        file = request.files.get("image")
-        if not file:
-            return jsonify({"error": "No image uploaded"}), 400
+        if image is None:
+            raise gr.Error("Please upload an image")
 
-        bg_template = request.form.get("bg_template")
+        # Convert to RGB if needed
+        pil_image = image.convert("RGB")
 
-        uid = uuid.uuid4().hex
-        input_path = os.path.join(UPLOAD, f"{uid}_input.png")
-        output_path = os.path.join(OUTPUT, f"{uid}_output.png")
-
-        file.save(input_path)
-        pil_image = Image.open(input_path).convert("RGB")
-
+        # Get background template if specified
         bg_image = None
-        if bg_template and bg_template != "none":
+        if bg_template and bg_template != "None":
             bg_image = load_template_background(bg_template, TEMPLATE_BG)
 
         # Run prediction with no_grad to reduce memory
@@ -259,196 +219,140 @@ def remove_background():
             refined_mask = refine_mask(mask)
             result = composite_foreground_with_bg(pil_image, refined_mask, bg_image)
 
-        result.save(output_path, "PNG")
-        try:
-            os.remove(input_path)
-        except Exception:
-            pass
-
-        return send_file(output_path, mimetype="image/png")
+        return result
 
     except Exception as e:
-        logger.exception("Error in remove_background: %s", e)
-        return jsonify({"error": str(e)}), 500
+        logger.exception("Error in remove_background_gradio: %s", e)
+        raise gr.Error(f"Error processing image: {str(e)}")
 
 
-@app.route("/api/remove-object", methods=["POST"])
-def remove_object():
-    """Remove objects from image using mask"""
+def remove_object_gradio(image: Image.Image, mask: Image.Image) -> Image.Image:
+    """Remove object from image using mask (Gradio version)"""
     try:
         model = get_migan_model()
         if model is None:
-            return jsonify({"error": "Object model not available"}), 503
+            raise gr.Error("Object model not available. Please try again later.")
 
-        image_file = request.files.get("image")
-        mask_file = request.files.get("mask")
+        if image is None:
+            raise gr.Error("Please upload an image")
 
-        if not image_file:
-            return jsonify({"error": "No image uploaded"}), 400
-        if not mask_file:
-            return jsonify({"error": "No mask provided"}), 400
+        if mask is None:
+            raise gr.Error("Please provide a mask for the object to remove")
+
+        # Save temporary files
+        import tempfile
 
         uid = uuid.uuid4().hex
-        input_path = os.path.join(UPLOAD, f"{uid}_input.png")
-        mask_path = os.path.join(UPLOAD, f"{uid}_mask.png")
-        output_path = os.path.join(OUTPUT, f"{uid}_output.png")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            input_path = os.path.join(temp_dir, f"{uid}_input.png")
+            mask_path = os.path.join(temp_dir, f"{uid}_mask.png")
+            output_path = os.path.join(temp_dir, f"{uid}_output.png")
 
-        image_file.save(input_path)
-        mask_file.save(mask_path)
+            # Save images
+            image.save(input_path)
+            mask.save(mask_path)
 
-        # Use brush-based grabcut with the mask
-        final_mask_path = grabcut_with_brush(input_path, mask_path)
+            # Process mask with GrabCut
+            final_mask_path = grabcut_with_brush(input_path, mask_path)
 
-        # Run GAN inpainting under no_grad
-        with torch.no_grad():
-            run_migan_inference(
-                model,
-                input_path,
-                final_mask_path,
-                output_path,
-                device=str(DEVICE)
-            )
+            # Run GAN inpainting under no_grad
+            with torch.no_grad():
+                result_path = run_migan_inference(
+                    model,
+                    input_path,
+                    final_mask_path,
+                    output_path,
+                    device=str(DEVICE)
+                )
 
-        # Clean up temporary files
-        for p in (input_path, mask_path):
-            try:
-                os.remove(p)
-            except Exception:
-                pass
-        if os.path.exists(final_mask_path) and final_mask_path != mask_path:
-            try:
-                os.remove(final_mask_path)
-            except Exception:
-                pass
-
-        return send_file(output_path, mimetype="image/png")
+            # Load result
+            result = Image.open(result_path).copy()
+            return result
 
     except Exception as e:
-        logger.exception("Error in remove_object: %s", e)
-        return jsonify({"error": str(e)}), 500
+        logger.exception("Error in remove_object_gradio: %s", e)
+        raise gr.Error(f"Error processing image: {str(e)}")
 
 
-@app.route("/api/process", methods=["POST"])
-def process_image():
-    try:
-        mode = request.form.get("mode", "background")
-        if mode == "background":
-            return remove_background()
-        elif mode == "object":
-            return remove_object()
-        else:
-            return jsonify({"error": "Invalid mode. Use 'background' or 'object'"}), 400
-    except Exception as e:
-        logger.exception("Error in process_image: %s", e)
-        return jsonify({"error": str(e)}), 500
+# ==================== GRADIO INTERFACE ====================
 
-
-@app.route("/")
-def home():
-    return render_template("index.html")
-
-
-@app.route("/api/templates", methods=["GET"])
-def get_templates():
-    try:
-        templates = []
-        if os.path.exists(TEMPLATE_BG):
-            for file in os.listdir(TEMPLATE_BG):
-                if file.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-                    templates.append({
-                        "name": os.path.splitext(file)[0],
-                        "filename": file,
-                        "url": f"/static/backgrounds/{file}"
-                    })
-        return jsonify({"templates": templates})
-    except Exception as e:
-        logger.exception("Error listing templates: %s", e)
-        return jsonify({"error": str(e)}), 500
-
-
-# ==================== GRADIO INTERFACE (Hugging Face) ====================
 def create_gradio_interface():
-    """Create Gradio interface for object removal (Hugging Face deployment)"""
-    try:
-        import gradio as gr
-    except ImportError:
-        logger.error("Gradio not installed. Install with: pip install gradio")
-        return None
+    """Create Gradio interface for Hugging Face Spaces deployment"""
 
-    def remove_object_gradio(image: Image.Image, mask: Image.Image) -> Image.Image:
-        """Remove object from image using mask (Gradio version)"""
-        try:
-            model = get_migan_model()
-            if model is None:
-                raise gr.Error("Object model not available. Please try again later.")
+    # Get available background templates
+    templates = ["None"]
+    if os.path.exists(TEMPLATE_BG):
+        for file in os.listdir(TEMPLATE_BG):
+            if file.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                templates.append(os.path.splitext(file)[0])
 
-            if image is None:
-                raise gr.Error("Please upload an image")
-
-            if mask is None:
-                raise gr.Error("Please provide a mask")
-
-            # Save temporary files
-            import tempfile
-
-            uid = uuid.uuid4().hex
-            with tempfile.TemporaryDirectory() as temp_dir:
-                input_path = os.path.join(temp_dir, f"{uid}_input.png")
-                mask_path = os.path.join(temp_dir, f"{uid}_mask.png")
-                output_path = os.path.join(temp_dir, f"{uid}_output.png")
-
-                # Save images
-                image.save(input_path)
-                mask.save(mask_path)
-
-                # Process mask with GrabCut
-                final_mask_path = grabcut_with_brush(input_path, mask_path)
-
-                # Run GAN inpainting under no_grad
-                with torch.no_grad():
-                    result_path = run_migan_inference(
-                        model,
-                        input_path,
-                        final_mask_path,
-                        output_path,
-                        device=str(DEVICE)
-                    )
-
-                # Load result
-                result = Image.open(result_path)
-                return result
-
-        except Exception as e:
-            logger.exception("Error in remove_object_gradio: %s", e)
-            raise gr.Error(f"Error processing image: {str(e)}")
-
-    with gr.Blocks(title="Object Removal Service", theme=gr.themes.Soft()) as demo:
-        gr.Markdown("# Object Removal Service")
-        gr.Markdown("Remove objects from images using AI inpainting with MiGAN.")
-
-        with gr.Row():
-            with gr.Column():
-                image_input = gr.Image(label="Input Image", type="pil")
-                mask_input = gr.Image(label="Mask Image (white = object to remove)", type="pil")
-                submit_btn = gr.Button("Remove Object", variant="primary")
-
-            with gr.Column():
-                output_image = gr.Image(label="Result")
-
-        submit_btn.click(
-            fn=remove_object_gradio,
-            inputs=[image_input, mask_input],
-            outputs=output_image
-        )
-
+    with gr.Blocks(title="Pixerase.AI - Background & Object Removal", theme=gr.themes.Soft()) as demo:
         gr.Markdown("""
-        ## Instructions
-        1. Upload your input image
-        2. Upload a mask image (white areas indicate objects to remove)
-        3. Click "Remove Object" to process
+# Pixerase.AI - AI-Powered Image Editing
 
-        The service uses GrabCut for mask refinement and MiGAN for AI-powered inpainting.
+Remove backgrounds and objects from your images using advanced AI models.
         """)
+
+        with gr.Tabs():
+            # Background Removal Tab
+            with gr.Tab("Background Removal"):
+                with gr.Row():
+                    with gr.Column():
+                        bg_image_input = gr.Image(label="Input Image", type="pil")
+                        bg_template_dropdown = gr.Dropdown(
+                            choices=templates,
+                            value="None",
+                            label="Background Template (Optional)"
+                        )
+                        bg_submit_btn = gr.Button("Remove Background", variant="primary", size="lg")
+
+                    with gr.Column():
+                        bg_output_image = gr.Image(label="Result")
+
+                bg_submit_btn.click(
+                    fn=remove_background_gradio,
+                    inputs=[bg_image_input, bg_template_dropdown],
+                    outputs=bg_output_image
+                )
+
+                gr.Markdown("""
+## Background Removal Instructions
+1. Upload your image
+2. (Optional) Select a background template to replace the background
+3. Click "Remove Background" to process
+
+The U²-Net model is used for accurate background segmentation.
+                """)
+
+            # Object Removal Tab
+            with gr.Tab("Object Removal"):
+                with gr.Row():
+                    with gr.Column():
+                        obj_image_input = gr.Image(label="Input Image", type="pil")
+                        obj_mask_input = gr.Image(
+                            label="Mask Image (white = object to remove)",
+                            type="pil",
+                            info="Draw white areas on a black background for objects to remove"
+                        )
+                        obj_submit_btn = gr.Button("Remove Object", variant="primary", size="lg")
+
+                    with gr.Column():
+                        obj_output_image = gr.Image(label="Result")
+
+                obj_submit_btn.click(
+                    fn=remove_object_gradio,
+                    inputs=[obj_image_input, obj_mask_input],
+                    outputs=obj_output_image
+                )
+
+                gr.Markdown("""
+## Object Removal Instructions
+1. Upload your image
+2. Provide a mask image (white areas = objects to remove, black = areas to keep)
+3. Click "Remove Object" to process
+
+The MiGAN model uses GAN-based inpainting for realistic object removal.
+                """)
 
     return demo
 
@@ -460,16 +364,7 @@ if __name__ == "__main__":
         logger.info("Waiting for model preparation thread to finish...")
         _model_thread.join(timeout=60)
 
-    if DEPLOYMENT_TARGET == "huggingface":
-        # Run Gradio interface for Hugging Face Spaces
-        logger.info("Starting Gradio interface for Hugging Face deployment")
-        demo = create_gradio_interface()
-        if demo:
-            demo.launch()
-        else:
-            logger.error("Failed to create Gradio interface")
-    else:
-        # Run Flask app for Render or development
-        logger.info(f"Starting Flask app for {DEPLOYMENT_TARGET} deployment")
-        port = int(os.environ.get("PORT", 10000))
-        app.run(host="0.0.0.0", port=port, debug=False)
+    logger.info("Starting Gradio interface for Hugging Face Spaces deployment")
+    demo = create_gradio_interface()
+    demo.launch()
+

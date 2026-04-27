@@ -1,0 +1,26 @@
+title: Pixerase.AI - Background & Object Removal
+description: AI-powered image editing tool for background removal and object inpainting
+sdk: gradio
+sdk_version: 4.44.1
+app_file: app.py
+models:
+  - model_id: U2Net Background Removal
+    name: u2net
+    type: segmentation
+    path: background/models/u2net.pth
+  - model_id: MiGAN Object Removal
+    name: migan
+    type: inpainting
+    path: object/models/migan_512_places2.pt
+env:
+  - name: DEPLOYMENT_TARGET
+    default: huggingface
+  - name: TORCH_THREADS
+    default: "1"
+  - name: BG_MODEL_FILE_ID
+    required: true
+  - name: OBJECT_MODEL_FILE_ID
+    required: true
+hardware: null
+hf_oauth: true
+private: false

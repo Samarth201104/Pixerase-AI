@@ -216,16 +216,11 @@ class UIController {
     }
 
     /**
-     * Process image with backend API
+     * Process image with HF Spaces
      */
     async processImage() {
         if (!window.canvasManager || !window.canvasManager.originalImage) {
             this.showStatus('Please upload an image first', '⚠️');
-            return;
-        }
-
-        if (this.currentMode === 'bg' && !window.apiService.isRenderConnected) {
-            this.showStatus('Background removal service not connected', '🔌');
             return;
         }
 
@@ -234,38 +229,24 @@ class UIController {
         this.elements.processBtn.disabled = true;
 
         try {
-            if (this.currentMode === 'object') {
-                // Object removal is now on Hugging Face Spaces
-                const hfUrl = window.apiService.getObjectRemovalURL();
-                this.showStatus('Redirecting to object removal service...', '🔗');
-
-                // Show a modal or redirect after a short delay
-                setTimeout(() => {
-                    window.open(hfUrl, '_blank');
-                    this.showStatus('Object removal service opened in new tab', '✅');
-                }, 1000);
-
-                this.isProcessing = false;
-                this.showLoading(false);
-                this.elements.processBtn.disabled = false;
-                return;
+            let hfUrl;
+            
+            if (this.currentMode === 'bg') {
+                hfUrl = window.apiService.getBackgroundRemovalURL();
+                this.showStatus('Opening Background Removal on HF Spaces...', '🔗');
+            } else {
+                hfUrl = window.apiService.getObjectRemovalURL();
+                this.showStatus('Opening Object Removal on HF Spaces...', '🔗');
             }
 
-            // Background removal via Render API
-            const imageBlob = await window.canvasManager.getImageBlob();
-            const response = await window.apiService.processImage(imageBlob, this.currentMode);
-
-            if (response instanceof Blob) {
-                const url = URL.createObjectURL(response);
-                this.processedImageUrl = url;
-                window.canvasManager.displayProcessedImage(url);
-                this.showCompareSlider(true);
-                this.elements.downloadBtn.disabled = false;
-                this.showStatus('Background removal complete!', '✅');
-            }
+            // Open HF Spaces in new tab after a short delay
+            setTimeout(() => {
+                window.open(hfUrl, '_blank');
+                this.showStatus('HF Spaces opened in new tab! Upload your image there.', '✅');
+            }, 800);
 
         } catch (error) {
-            this.showStatus(`Processing failed: ${error.message}`, '❌');
+            this.showStatus(`Error: ${error.message}`, '❌');
             console.error('Process error:', error);
         } finally {
             this.isProcessing = false;

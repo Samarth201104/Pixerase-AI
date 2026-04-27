@@ -1,44 +1,56 @@
-# Pixerase.AI - Split Deployment Architecture
+# Pixerase.AI - AI-Powered Image Editing
 
-Pixerase-AI is an advanced AI-powered image editing tool designed for seamless background removal and object inpainting. This project supports deployment on multiple platforms with optimized configurations.
+Pixerase.AI is an advanced AI-powered image editing tool designed for seamless background removal and object inpainting. The application is deployed on **Hugging Face Spaces** with a unified Gradio interface.
 
-## Architecture Overview
+## 🌟 Features
 
-### Deployment Targets
+- **Background Removal**: Automatically detect and remove backgrounds from images using U2Net model
+- **Object Inpainting**: Fill in removed objects or areas with contextually appropriate content using MiGAN
+- **Unified Interface**: Single Gradio application with dual processing tabs
+- **Easy Deployment**: One-click deployment on Hugging Face Spaces
+- **Memory Optimized**: CPU and GPU support with intelligent resource management
+- **Frontend Integration**: Optional web interface for user redirection to HF Spaces
 
-- **Render (Background Removal)**: Flask API for background removal using U2Net
-- **Hugging Face Spaces (Object Removal)**: Gradio web interface for object removal using MiGAN
-- **Development**: Local development with both services
+## 🏗️ Architecture
 
-## Features
+The application runs as a single **Gradio interface** on Hugging Face Spaces:
 
-- **Background Removal**: Automatically detect and remove backgrounds from images using U2Net model.
-- **Object Inpainting**: Fill in removed objects or areas with contextually appropriate content using GAN models like MiGAN.
-- **Platform-Specific Optimization**: Memory and performance optimizations for each deployment target.
-- **Web Interface**: User-friendly interfaces for easy image upload and processing.
+```
+Hugging Face Spaces (Single Gradio App)
+├── Tab 1: Background Removal (U2Net)
+├── Tab 2: Object Removal (MiGAN)
+└── Shared Model Loading & Processing
+```
 
-## Installation & Setup
+**Key Components**:
+- **Background removal**: U2Net for segmentation + mask refinement
+- **Object removal**: MiGAN for inpainting + GrabCut for mask processing
+- **Framework**: Gradio for web UI
+- **Models**: Hosted on Google Drive with auto-download
+
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- Python 3.8 or higher
-- Git (for cloning the repository)
-- A virtual environment tool (e.g., venv)
+- Python 3.8+
+- Git
+- Virtual environment (venv/conda)
 
 ### Local Development
 
-1. **Clone the Repository**:
+1. **Clone Repository**:
    ```bash
    git clone https://github.com/your-username/pixerase-ai.git
    cd pixerase-ai
    ```
 
-2. **Create and Activate Virtual Environment**:
+2. **Create Virtual Environment**:
    ```bash
    python -m venv venv
-   # On Windows:
+   
+   # Windows
    venv\Scripts\activate
-   # On macOS/Linux:
+   # macOS/Linux
    source venv/bin/activate
    ```
 
@@ -47,174 +59,332 @@ Pixerase-AI is an advanced AI-powered image editing tool designed for seamless b
    pip install -r requirements.txt
    ```
 
-4. **Download Pre-trained Models**:
-   - Download the required model files and place them in the appropriate directories:
-     - U²-Net model (`u2net.pth`) → `models/`
-     - MI-GAN models (e.g., `migan_512_places2.pt`) → `models/`
+4. **Prepare Models** (choose one):
+   - **Option A**: Download models manually
+     - U2Net: `background/models/u2net.pth`
+     - MiGAN: `object/models/migan_512_places2.pt`
+   
+   - **Option B**: Auto-download from Google Drive
+     - Set `BG_MODEL_FILE_ID` environment variable
+     - Set `OBJECT_MODEL_FILE_ID` environment variable
 
-5. **Run Development Server**:
+5. **Run Locally**:
    ```bash
    python app.py
    ```
+   Access at: `http://localhost:7860`
 
-## Deployment
+## 📋 Deployment on Hugging Face Spaces
 
-### Render (Background Removal)
+### Prerequisites
+- Hugging Face account
+- GitHub repository
+- Models hosted on Google Drive (or HF Hub)
 
-1. Create a new Web Service on Render
-2. Connect your GitHub repository
-3. Set the following environment variables:
-   - `DEPLOYMENT_TARGET`: `render`
-   - `BG_MODEL_FILE_ID`: Your Google Drive file ID for U2Net model
-   - `TORCH_THREADS`: `1`
-   - `SKIP_MODEL_DOWNLOAD`: `false`
-4. Use these build settings:
-   - Build Command: `pip install -r requirements.txt`
-   - Start Command: `gunicorn app:app`
+### Deployment Steps
 
-### Hugging Face Spaces (Object Removal)
+**For detailed instructions, see [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)**
 
-1. Create a new Space on Hugging Face
-2. Select "Gradio" as the SDK
-3. Upload all files from this repository
-4. Set environment variables in Space settings:
-   - `DEPLOYMENT_TARGET`: `huggingface`
-   - `OBJECT_MODEL_FILE_ID`: Your Google Drive file ID for MiGAN model
-   - `TORCH_THREADS`: `1`
-   - `SKIP_MODEL_DOWNLOAD`: `false`
-5. The app will run automatically
+**Quick Summary**:
 
-## Environment Variables
+1. Create new Space: https://huggingface.co/spaces
+   - Select **Gradio** SDK
+   - Name: `pixerase-ai`
+   
+2. Connect GitHub repository or upload files manually
 
-### Common
-- `DEPLOYMENT_TARGET`: `render`, `huggingface`, or `development` (default: development)
-- `MODELS_DIR`: Directory to store models (default: "models")
-- `TORCH_THREADS`: Number of PyTorch threads (default: 1)
-- `SKIP_MODEL_DOWNLOAD`: Skip model download (default: false)
-
-### Background Removal (Render)
-- `BG_MODEL_FILE_ID`: Google Drive file ID for U2Net model
-
-### Object Removal (Hugging Face)
-- `OBJECT_MODEL_FILE_ID`: Google Drive file ID for MiGAN model
-
-## Testing
-
-Run the deployment test script to verify configurations:
-
-```bash
-python test_deployment.py
-```
-
-This will test all deployment modes and ensure the app can import correctly for each target platform.
-
-## API Endpoints (Render)
-
-### POST /api/remove-background
-
-Removes the background from an uploaded image.
-
-**Parameters:**
-- `image` (file): The image file to process
-- `bg_template` (optional): Background template name
-
-**Response:**
-- PNG image with transparent background
-
-### GET /api/health
-
-Returns service health status.
-
-## Usage (Hugging Face)
-
-Upload an image and a mask (white areas indicate objects to remove). The service will use GrabCut to refine the mask and MiGAN to inpaint the removed areas.
-
-## Memory Optimization
-
-- **Render**: CPU-only inference, limited threads, optimized for 512MB RAM
-- **Hugging Face**: CPU-optimized with opencv-python-headless
-- **Development**: Full local development with both services
-
-   ### 🔹 MI-GAN (Object Removal - Inpainting)
-   Download from:
-   https://github.com/Picsart-AI-Research/MI-GAN
-
-   ### 🔹 U²-Net (Background Removal)
-   Download from:
-   https://drive.google.com/uc?id=1ao1ovG1Qtx4b7EoskHXmi2E9rp5CHLcZ
-
-## Usage
-
-### Running the Web Application
-
-1. Start the Flask application:
-   ```bash
-   python app.py
+3. Set environment variables in Space Settings:
+   ```
+   DEPLOYMENT_TARGET=huggingface
+   TORCH_THREADS=1
+   BG_MODEL_FILE_ID=<your_file_id>
+   OBJECT_MODEL_FILE_ID=<your_file_id>
+   SKIP_MODEL_DOWNLOAD=false
    ```
 
-2. Open your browser and navigate to `http://localhost:5000` (or the specified port).
+4. Select hardware (CPU free, or GPU-T4 paid)
 
-3. Upload an image via the web interface, select the desired operation (background removal or object inpainting), and process it.
+5. Space builds and launches automatically
 
-### Command-Line Scripts
+### Getting Model File IDs from Google Drive
 
-- **Background Removal**:
-  ```bash
-  python object/scripts/app_autoremoval.py --input path/to/image.jpg --output path/to/output.jpg
-  ```
+1. Upload models to Google Drive
+2. Right-click → Share → Get link
+3. Extract ID from URL:
+   ```
+   https://drive.google.com/file/d/{FILE_ID}/view
+   ```
+4. Set as environment variables
 
-- **Object Inpainting**:
-  ```bash
-  python object/main.py --config object/configs/experiment/comodgan_places256.yaml --input path/to/image.jpg --mask path/to/mask.jpg --output path/to/output.jpg
-  ```
-
-- **Evaluation**:
-  ```bash
-  python object/scripts/evaluate_fid_lpips.py --real_dir path/to/real_images --fake_dir path/to/generated_images
-  ```
-
-- **Export to ONNX**:
-  ```bash
-  python object/scripts/create_onnx_pipeline.py --model_path background/models/u2net.pth --output_path outputs/u2net.onnx
-  ```
-
-### Configuration
-
-- Modify experiment configurations in `object/configs/experiment/`.
-- Adjust model settings in `object/configs/model/`.
-- Dataset configurations are in `object/configs/dataset/`.
-
-## Project Structure
+## 📁 Project Structure
 
 ```
 pixerase-ai/
-├── app.py                          # Main Flask application
-├── requirements.txt                # Python dependencies
-├── .gitignore                      # Git ignore file
-├── background/                     # Background removal module
-│   ├── __init__.py
-│   ├── background_removal.py
-│   ├── model/                      # U2Net model implementation
-│   ├── models/                     # Pre-trained U2Net model weights
+├── app.py                      # Main Gradio application
+├── requirements.txt            # Python dependencies
+├── app.yaml                    # HF Space configuration
+├── README.md                   # This file
+│
+├── DEPLOYMENT_GUIDE.md         # Detailed deployment guide
+├── QUICK_START.md              # Quick reference
+├── DEPLOYMENT_CHECKLIST.md     # Verification checklist
+├── CHANGES.md                  # Migration summary
+│
+├── background/                 # Background removal module
 │   ├── model_loader.py
-│   └── utils.py
-├── backgrounds/                    # Template background images
-├── frontend/                       # Web interface
+│   ├── background_removal.py
+│   ├── utils.py
+│   ├── model/
+│   │   └── u2net.py           # U2Net architecture
+│   └── models/
+│       └── u2net.pth          # Model weights (~168MB)
+│
+├── object/                     # Object removal module
+│   ├── infer.py
+│   ├── main.py
+│   ├── dnnlib/
+│   ├── lib/                   # Supporting utilities
+│   ├── torch_utils/
+│   ├── model_zoo/
+│   └── models/
+│       └── migan_512_places2.pt # Model weights (~512MB)
+│
+├── frontend/                   # Web interface (optional)
 │   ├── css/
 │   │   └── styles.css
 │   ├── js/
-│   │   ├── api-service.js
 │   │   ├── app.js
+│   │   ├── api-service.js     # HF Space redirect
+│   │   ├── ui-controller.js
 │   │   ├── canvas-manager.js
-│   │   ├── image-processor.js
-│   │   └── ui-controller.js
+│   │   └── image-processor.js
 │   └── templates/
 │       └── index.html
-├── object/                         # Object inpainting module
-│   ├── infer.py
-│   ├── main.py
-│   ├── configs/                    # Configuration files
-│   │   ├── dataset/
+│
+└── outputs/                    # Processing output directory
+```
+
+## ⚙️ Configuration
+
+### Environment Variables
+
+**Required (HF Spaces)**:
+- `DEPLOYMENT_TARGET`: `huggingface` (required)
+- `BG_MODEL_FILE_ID`: Google Drive ID for U2Net
+- `OBJECT_MODEL_FILE_ID`: Google Drive ID for MiGAN
+
+**Optional**:
+- `TORCH_THREADS`: PyTorch threads (default: 1)
+- `SKIP_MODEL_DOWNLOAD`: Skip auto-download (default: false)
+- `MODELS_DIR`: Model storage location (default: models/)
+
+**Development**:
+- `DEPLOYMENT_TARGET`: `development` (optional, for local testing)
+
+## 🤖 Model Information
+
+### Background Removal - U²-Net
+- **Task**: Semantic segmentation for background extraction
+- **Input**: RGB images (any size)
+- **Output**: Foreground mask + composite image
+- **Size**: 168 MB
+- **Performance**: CPU: 5-15s/image, GPU: <1s/image
+
+### Object Removal - MiGAN
+- **Task**: GAN-based image inpainting
+- **Input**: RGB image + binary mask (white=remove, black=keep)
+- **Output**: Inpainted image
+- **Size**: 512 MB
+- **Performance**: CPU: 10-30s/image, GPU: 2-5s/image
+
+## 🔧 How It Works
+
+### Background Removal Pipeline
+1. User uploads image
+2. U2Net generates foreground mask
+3. Mask is refined using morphological operations
+4. Foreground composited on optional background template
+5. Result displayed to user
+
+### Object Removal Pipeline
+1. User uploads image and mask
+2. GrabCut refines mask based on image content
+3. MiGAN inpaints masked regions using learned patterns
+4. Result displayed to user
+
+## 📚 Usage Guide
+
+### On Hugging Face Spaces
+
+#### Background Removal Tab
+1. Upload an image
+2. Optionally select background template
+3. Click "Remove Background"
+4. Download result
+
+#### Object Removal Tab
+1. Upload image to remove from
+2. Upload mask image (white = remove, black = keep)
+3. Click "Remove Object"
+4. Download result
+
+### Optional: Using Frontend
+
+If deploying the frontend separately:
+1. Update `api-service.js` with your HF Space URL
+2. Frontend will redirect to HF Spaces on processing
+
+## 🐛 Troubleshooting
+
+### Models Not Downloading
+- Verify Google Drive file IDs are correct
+- Ensure files are public or shared with "Anyone with link"
+- Check internet connection
+- Look at Space logs for gdown errors
+
+### Out of Memory
+- Reduce input image size
+- Upgrade to GPU-T4 hardware
+- Increase HF Space memory allocation
+- Use smaller models (future versions)
+
+### Slow Processing
+- **CPU**: 5-30s per image (normal for free tier)
+- **GPU-T4**: 2-10s per image
+- **Solution**: Upgrade to GPU hardware for faster processing
+
+### Import Errors
+- Verify all dependencies in requirements.txt
+- Check for missing PyTorch/CUDA compatibility
+- Verify model files exist or download correctly
+- Check Python version (3.8+ required)
+
+### Build Failures
+- Check HF Space build logs
+- Verify environment variables are set correctly
+- Ensure all files are uploaded
+- Check requirements.txt for version conflicts
+
+## 📖 Documentation
+
+- **[QUICK_START.md](./QUICK_START.md)** - Quick reference (5 min read)
+- **[DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)** - Detailed deployment steps (30 min read)
+- **[DEPLOYMENT_CHECKLIST.md](./DEPLOYMENT_CHECKLIST.md)** - Verification checklist
+- **[CHANGES.md](./CHANGES.md)** - Migration and architecture details
+- **[FILE_REFERENCE.md](./FILE_REFERENCE.md)** - File-by-file guide
+
+## 📦 Dependencies
+
+### Core
+- `torch>=2.0.0` - Deep learning framework
+- `torchvision>=0.15.0` - Computer vision utilities
+- `gradio>=4.4.1` - Web UI framework
+- `gradio-client>=0.2.0` - Gradio API client
+- `pillow>=10.0.0` - Image processing
+
+### Supporting
+- `opencv-python>=4.8.0` - Image processing
+- `scikit-image>=0.21.0` - Image algorithms
+- `gdown>=6.0.0` - Google Drive downloads
+- `numpy>=1.24.0` - Numerical computing
+
+See [requirements.txt](./requirements.txt) for complete list.
+
+## 🎯 Performance Notes
+
+### Recommended Settings
+
+**For Free CPU Tier**:
+- Max image size: 1024x1024
+- Expected time: 10-30s per image
+- Concurrent users: 1-2
+- Cost: Free
+
+**For GPU-T4 (Recommended)**:
+- Max image size: 2048x2048
+- Expected time: 2-5s per image
+- Concurrent users: 5-10
+- Cost: ~$0.50/hour
+
+**For GPU-A100**:
+- Max image size: 4096x4096
+- Expected time: <1s per image
+- Concurrent users: 20+
+- Cost: ~$1.00/hour
+
+## 📞 Support & Contribution
+
+### Getting Help
+1. Check [Troubleshooting](#-troubleshooting) section
+2. Read [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
+3. Search existing GitHub issues
+4. Open new issue with:
+   - Your deployment target (HF/development)
+   - Error message and logs
+   - Steps to reproduce
+   - Python version and OS
+
+### Contributing
+- Fork the repository
+- Create feature branch (`git checkout -b feature/amazing-feature`)
+- Commit changes (`git commit -m 'Add amazing feature'`)
+- Push to branch (`git push origin feature/amazing-feature`)
+- Open Pull Request
+
+### Reporting Issues
+- Use GitHub Issues for bug reports
+- Include error logs and reproduction steps
+- Specify your environment (OS, Python version, hardware)
+
+## 📜 License
+
+This project is provided as-is for educational and research purposes.
+
+## 🙏 Acknowledgments
+
+- **U²-Net**: [Original Paper](https://arxiv.org/abs/2005.09007)
+- **MiGAN**: [GitHub Repository](https://github.com/Picsart-AI-Research/MI-GAN)
+- **Gradio**: [Framework](https://gradio.app)
+- **Hugging Face**: [Spaces Platform](https://huggingface.co/spaces)
+
+## 📝 Citation
+
+If you use this project, please cite:
+
+```bibtex
+@project{pixerase2024,
+  title={Pixerase.AI - AI-Powered Image Editing},
+  author={Your Name},
+  year={2024},
+  url={https://github.com/your-username/pixerase-ai}
+}
+```
+
+## 📊 Project Statistics
+
+- **Models**: 2 (U2Net, MiGAN)
+- **Supported Tasks**: Background removal, Object inpainting
+- **Deployment Platform**: Hugging Face Spaces
+- **Framework**: Gradio, PyTorch
+- **Python Version**: 3.8+
+- **License**: Educational/Research
+
+## 🔮 Future Enhancements
+
+- [ ] More inpainting models
+- [ ] Batch processing support
+- [ ] Real-time video processing
+- [ ] Model quantization for faster inference
+- [ ] Advanced mask editor in Gradio
+- [ ] API endpoint documentation
+- [ ] Mobile-friendly interface
+- [ ] Custom model fine-tuning
+
+---
+
+**Last Updated**: April 27, 2026  
+**Status**: Production Ready ✅  
+**Deployed On**: Hugging Face Spaces
 │   │   │   ├── ffhq.yaml
 │   │   │   └── places2.yaml
 │   │   ├── experiment/
