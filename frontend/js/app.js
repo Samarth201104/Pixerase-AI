@@ -30,12 +30,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // Listen for API status changes
     window.addEventListener('apiStatusChange', (event) => {
-        const { connected } = event.detail;
-        console.log(`API Status: ${connected ? 'Connected' : 'Disconnected'}`);
+        const { renderConnected } = event.detail;
+        console.log(`Render API Status: ${renderConnected ? 'Connected' : 'Disconnected'}`);
         
-        if (!connected && window.uiController) {
+        if (!renderConnected && window.uiController) {
             window.uiController.showStatus(
-                'Backend not connected. Please start the Flask server on http://localhost:5000',
+                'Background removal service not connected. Please check the Render deployment.',
                 '🔌'
             );
         }
@@ -44,7 +44,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Check API health after initialization
     setTimeout(() => {
         if (window.apiService) {
-            window.apiService.checkHealth();
+            window.apiService.checkRenderHealth();
         }
     }, 1000);
     

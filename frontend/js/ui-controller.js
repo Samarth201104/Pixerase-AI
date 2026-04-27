@@ -223,41 +223,47 @@ class UIController {
             this.showStatus('Please upload an image first', '⚠️');
             return;
         }
-        
-        if (!window.apiService.isConnected) {
-            this.showStatus('Backend not connected. Please start the Flask server.', '🔌');
+
+        if (this.currentMode === 'bg' && !window.apiService.isRenderConnected) {
+            this.showStatus('Background removal service not connected', '🔌');
             return;
         }
-        
+
         this.isProcessing = true;
         this.showLoading(true);
         this.elements.processBtn.disabled = true;
-        
+
         try {
-            const imageBlob = await window.canvasManager.getImageBlob();
-            let maskBlob = null;
-            
             if (this.currentMode === 'object') {
-                maskBlob = await window.canvasManager.getMaskBlob();
+                // Object removal is now on Hugging Face Spaces
+                const hfUrl = window.apiService.getObjectRemovalURL();
+                this.showStatus('Redirecting to object removal service...', '🔗');
+
+                // Show a modal or redirect after a short delay
+                setTimeout(() => {
+                    window.open(hfUrl, '_blank');
+                    this.showStatus('Object removal service opened in new tab', '✅');
+                }, 1000);
+
+                this.isProcessing = false;
+                this.showLoading(false);
+                this.elements.processBtn.disabled = false;
+                return;
             }
-            
-            const response = await window.apiService.processImage(imageBlob, this.currentMode, maskBlob);
-            
+
+            // Background removal via Render API
+            const imageBlob = await window.canvasManager.getImageBlob();
+            const response = await window.apiService.processImage(imageBlob, this.currentMode);
+
             if (response instanceof Blob) {
                 const url = URL.createObjectURL(response);
                 this.processedImageUrl = url;
                 window.canvasManager.displayProcessedImage(url);
                 this.showCompareSlider(true);
                 this.elements.downloadBtn.disabled = false;
-                this.showStatus('Processing complete!', '✅');
-            } else if (response.imageUrl) {
-                this.processedImageUrl = response.imageUrl;
-                window.canvasManager.displayProcessedImage(response.imageUrl);
-                this.showCompareSlider(true);
-                this.elements.downloadBtn.disabled = false;
-                this.showStatus('Processing complete!', '✅');
+                this.showStatus('Background removal complete!', '✅');
             }
-            
+
         } catch (error) {
             this.showStatus(`Processing failed: ${error.message}`, '❌');
             console.error('Process error:', error);
