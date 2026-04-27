@@ -1,18 +1,23 @@
-# Pixerase-AI
+# Pixerase.AI - Split Deployment Architecture
 
-Pixerase-AI is an advanced AI-powered image editing tool designed for seamless background removal and object inpainting. Leveraging state-of-the-art deep learning models like U2Net and custom GAN-based architectures (e.g., MiGAN, CoMoDGAN), it provides users with an intuitive web interface to process images efficiently. Whether you're removing backgrounds for product photos or inpainting objects in scenes, Pixerase-AI delivers high-quality results with minimal effort.
+Pixerase-AI is an advanced AI-powered image editing tool designed for seamless background removal and object inpainting. This project supports deployment on multiple platforms with optimized configurations.
+
+## Architecture Overview
+
+### Deployment Targets
+
+- **Render (Background Removal)**: Flask API for background removal using U2Net
+- **Hugging Face Spaces (Object Removal)**: Gradio web interface for object removal using MiGAN
+- **Development**: Local development with both services
 
 ## Features
 
 - **Background Removal**: Automatically detect and remove backgrounds from images using U2Net model.
-- **Object Inpainting**: Fill in removed objects or areas with contextually appropriate content using GAN models like MiGAN and CoMoDGAN.
-- **Web Interface**: User-friendly frontend built with HTML, CSS, and JavaScript for easy image upload and processing.
-- **Batch Processing**: Support for processing multiple images via scripts.
-- **Model Flexibility**: Pre-trained models for various datasets (FFHQ, Places2) and resolutions (256x256, 512x512).
-- **Evaluation Tools**: Built-in scripts for evaluating model performance (FID, LPIPS, PSNR, SSIM).
-- **Export Options**: Export processed images and create ONNX pipelines for deployment.
+- **Object Inpainting**: Fill in removed objects or areas with contextually appropriate content using GAN models like MiGAN.
+- **Platform-Specific Optimization**: Memory and performance optimizations for each deployment target.
+- **Web Interface**: User-friendly interfaces for easy image upload and processing.
 
-## Installation
+## Installation & Setup
 
 ### Prerequisites
 
@@ -20,7 +25,7 @@ Pixerase-AI is an advanced AI-powered image editing tool designed for seamless b
 - Git (for cloning the repository)
 - A virtual environment tool (e.g., venv)
 
-### Steps
+### Local Development
 
 1. **Clone the Repository**:
    ```bash
@@ -41,13 +46,94 @@ Pixerase-AI is an advanced AI-powered image editing tool designed for seamless b
    ```bash
    pip install -r requirements.txt
    ```
-   *Note: requirements.txt contains the exact package versions as installed in the development environment (generated via `pip freeze`).*
 
 4. **Download Pre-trained Models**:
    - Download the required model files and place them in the appropriate directories:
-     - U²-Net model (`u2net.pth`) → `background/models/`
-     - MI-GAN models (e.g., `migan_512_places2.pt`) → `object/models/`
-   - Ensure the models match the configurations in `object/configs/`.
+     - U²-Net model (`u2net.pth`) → `models/`
+     - MI-GAN models (e.g., `migan_512_places2.pt`) → `models/`
+
+5. **Run Development Server**:
+   ```bash
+   python app.py
+   ```
+
+## Deployment
+
+### Render (Background Removal)
+
+1. Create a new Web Service on Render
+2. Connect your GitHub repository
+3. Set the following environment variables:
+   - `DEPLOYMENT_TARGET`: `render`
+   - `BG_MODEL_FILE_ID`: Your Google Drive file ID for U2Net model
+   - `TORCH_THREADS`: `1`
+   - `SKIP_MODEL_DOWNLOAD`: `false`
+4. Use these build settings:
+   - Build Command: `pip install -r requirements.txt`
+   - Start Command: `gunicorn app:app`
+
+### Hugging Face Spaces (Object Removal)
+
+1. Create a new Space on Hugging Face
+2. Select "Gradio" as the SDK
+3. Upload all files from this repository
+4. Set environment variables in Space settings:
+   - `DEPLOYMENT_TARGET`: `huggingface`
+   - `OBJECT_MODEL_FILE_ID`: Your Google Drive file ID for MiGAN model
+   - `TORCH_THREADS`: `1`
+   - `SKIP_MODEL_DOWNLOAD`: `false`
+5. The app will run automatically
+
+## Environment Variables
+
+### Common
+- `DEPLOYMENT_TARGET`: `render`, `huggingface`, or `development` (default: development)
+- `MODELS_DIR`: Directory to store models (default: "models")
+- `TORCH_THREADS`: Number of PyTorch threads (default: 1)
+- `SKIP_MODEL_DOWNLOAD`: Skip model download (default: false)
+
+### Background Removal (Render)
+- `BG_MODEL_FILE_ID`: Google Drive file ID for U2Net model
+
+### Object Removal (Hugging Face)
+- `OBJECT_MODEL_FILE_ID`: Google Drive file ID for MiGAN model
+
+## Testing
+
+Run the deployment test script to verify configurations:
+
+```bash
+python test_deployment.py
+```
+
+This will test all deployment modes and ensure the app can import correctly for each target platform.
+
+## API Endpoints (Render)
+
+### POST /api/remove-background
+
+Removes the background from an uploaded image.
+
+**Parameters:**
+- `image` (file): The image file to process
+- `bg_template` (optional): Background template name
+
+**Response:**
+- PNG image with transparent background
+
+### GET /api/health
+
+Returns service health status.
+
+## Usage (Hugging Face)
+
+Upload an image and a mask (white areas indicate objects to remove). The service will use GrabCut to refine the mask and MiGAN to inpaint the removed areas.
+
+## Memory Optimization
+
+- **Render**: CPU-only inference, limited threads, optimized for 512MB RAM
+- **Hugging Face**: CPU-optimized with opencv-python-headless
+- **Development**: Full local development with both services
 
    ### 🔹 MI-GAN (Object Removal - Inpainting)
    Download from:

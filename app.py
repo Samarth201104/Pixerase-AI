@@ -23,17 +23,40 @@ from object.infer import (
     grabcut_with_brush,
 )
 
+# ==================== DEPLOYMENT CONFIG ====================
+# Check deployment target
+DEPLOYMENT_TARGET = os.environ.get("DEPLOYMENT_TARGET", "development")  # "render", "huggingface", or "development"
+
 # ==================== CONFIG & LOGGING ====================
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("pixerase")
 
-# Use CPU only and limit threads to reduce RAM/CPU usage on free tiers
-torch.set_num_threads(int(os.environ.get("TORCH_THREADS", "1")))
-torch.set_grad_enabled(False)
-try:
-    torch.backends.cudnn.enabled = False
-except Exception:
-    pass
+# Deployment-specific optimizations
+if DEPLOYMENT_TARGET == "render":
+    # Render-specific memory optimizations
+    torch.set_num_threads(int(os.environ.get("TORCH_THREADS", "1")))
+    torch.set_grad_enabled(False)
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
+    try:
+        torch.backends.cudnn.enabled = False
+    except Exception:
+        pass
+elif DEPLOYMENT_TARGET == "huggingface":
+    # Hugging Face Spaces optimizations
+    torch.set_num_threads(int(os.environ.get("TORCH_THREADS", "1")))
+    torch.set_grad_enabled(False)
+    try:
+        torch.backends.cudnn.enabled = False
+    except Exception:
+        pass
+else:
+    # Development mode
+    torch.set_num_threads(int(os.environ.get("TORCH_THREADS", "1")))
+    torch.set_grad_enabled(False)
+    try:
+        torch.backends.cudnn.enabled = False
+    except Exception:
+        pass
 
 # Directories
 UPLOAD = "uploads"
@@ -128,34 +151,38 @@ def safe_load_object_model(path: str):
 
 
 def prepare_models():
-    """Ensure models are downloaded and loaded once at startup."""
+    """Ensure models are downloaded and loaded once at startup based on deployment target."""
     global bg_model, migan_model
 
     if SKIP_MODEL_DOWNLOAD:
         logger.info("SKIP_MODEL_DOWNLOAD is set; skipping download step")
     else:
-        # Download models if missing
-        if BG_MODEL_FILE_ID:
-            download_from_gdrive(BG_MODEL_FILE_ID, BG_MODEL_PATH, quiet=True)
-        else:
-            logger.warning("BG_MODEL_FILE_ID not set; background model will not be downloaded")
+        # Download models based on deployment target
+        if DEPLOYMENT_TARGET in ["render", "development"]:
+            if BG_MODEL_FILE_ID:
+                download_from_gdrive(BG_MODEL_FILE_ID, BG_MODEL_PATH, quiet=True)
+            else:
+                logger.warning("BG_MODEL_FILE_ID not set; background model will not be downloaded")
 
-        if OBJECT_MODEL_FILE_ID:
-            download_from_gdrive(OBJECT_MODEL_FILE_ID, OBJECT_MODEL_PATH, quiet=True)
-        else:
-            logger.warning("OBJECT_MODEL_FILE_ID not set; object model will not be downloaded")
+        if DEPLOYMENT_TARGET in ["huggingface", "development"]:
+            if OBJECT_MODEL_FILE_ID:
+                download_from_gdrive(OBJECT_MODEL_FILE_ID, OBJECT_MODEL_PATH, quiet=True)
+            else:
+                logger.warning("OBJECT_MODEL_FILE_ID not set; object model will not be downloaded")
 
-    # Load models into memory (CPU only)
+    # Load models into memory based on deployment target
     try:
-        if os.path.exists(BG_MODEL_PATH):
-            bg_model = safe_load_bg_model(BG_MODEL_PATH)
-        else:
-            logger.warning("Background model file not found at %s", BG_MODEL_PATH)
+        if DEPLOYMENT_TARGET in ["render", "development"]:
+            if os.path.exists(BG_MODEL_PATH):
+                bg_model = safe_load_bg_model(BG_MODEL_PATH)
+            else:
+                logger.warning("Background model file not found at %s", BG_MODEL_PATH)
 
-        if os.path.exists(OBJECT_MODEL_PATH):
-            migan_model = safe_load_object_model(OBJECT_MODEL_PATH)
-        else:
-            logger.warning("Object model file not found at %s", OBJECT_MODEL_PATH)
+        if DEPLOYMENT_TARGET in ["huggingface", "development"]:
+            if os.path.exists(OBJECT_MODEL_PATH):
+                migan_model = safe_load_object_model(OBJECT_MODEL_PATH)
+            else:
+                logger.warning("Object model file not found at %s", OBJECT_MODEL_PATH)
     except Exception:
         logger.exception("Unexpected error while preparing models")
 
@@ -339,12 +366,110 @@ def get_templates():
         return jsonify({"error": str(e)}), 500
 
 
-# Gunicorn friendly: app is module-level. If run directly, use Flask built-in server for quick dev.
+# ==================== GRADIO INTERFACE (Hugging Face) ====================
+def create_gradio_interface():
+    """Create Gradio interface for object removal (Hugging Face deployment)"""
+    try:
+        import gradio as gr
+    except ImportError:
+        logger.error("Gradio not installed. Install with: pip install gradio")
+        return None
+
+    def remove_object_gradio(image: Image.Image, mask: Image.Image) -> Image.Image:
+        """Remove object from image using mask (Gradio version)"""
+        try:
+            model = get_migan_model()
+            if model is None:
+                raise gr.Error("Object model not available. Please try again later.")
+
+            if image is None:
+                raise gr.Error("Please upload an image")
+
+            if mask is None:
+                raise gr.Error("Please provide a mask")
+
+            # Save temporary files
+            import tempfile
+
+            uid = uuid.uuid4().hex
+            with tempfile.TemporaryDirectory() as temp_dir:
+                input_path = os.path.join(temp_dir, f"{uid}_input.png")
+                mask_path = os.path.join(temp_dir, f"{uid}_mask.png")
+                output_path = os.path.join(temp_dir, f"{uid}_output.png")
+
+                # Save images
+                image.save(input_path)
+                mask.save(mask_path)
+
+                # Process mask with GrabCut
+                final_mask_path = grabcut_with_brush(input_path, mask_path)
+
+                # Run GAN inpainting under no_grad
+                with torch.no_grad():
+                    result_path = run_migan_inference(
+                        model,
+                        input_path,
+                        final_mask_path,
+                        output_path,
+                        device=str(DEVICE)
+                    )
+
+                # Load result
+                result = Image.open(result_path)
+                return result
+
+        except Exception as e:
+            logger.exception("Error in remove_object_gradio: %s", e)
+            raise gr.Error(f"Error processing image: {str(e)}")
+
+    with gr.Blocks(title="Object Removal Service", theme=gr.themes.Soft()) as demo:
+        gr.Markdown("# Object Removal Service")
+        gr.Markdown("Remove objects from images using AI inpainting with MiGAN.")
+
+        with gr.Row():
+            with gr.Column():
+                image_input = gr.Image(label="Input Image", type="pil")
+                mask_input = gr.Image(label="Mask Image (white = object to remove)", type="pil")
+                submit_btn = gr.Button("Remove Object", variant="primary")
+
+            with gr.Column():
+                output_image = gr.Image(label="Result")
+
+        submit_btn.click(
+            fn=remove_object_gradio,
+            inputs=[image_input, mask_input],
+            outputs=output_image
+        )
+
+        gr.Markdown("""
+        ## Instructions
+        1. Upload your input image
+        2. Upload a mask image (white areas indicate objects to remove)
+        3. Click "Remove Object" to process
+
+        The service uses GrabCut for mask refinement and MiGAN for AI-powered inpainting.
+        """)
+
+    return demo
+
+
+# ==================== MAIN EXECUTION ====================
 if __name__ == "__main__":
-    logger.info("Starting development server")
-    port = int(os.environ.get("PORT", 10000))
-    # Ensure models are prepared before accepting requests locally
+    # Ensure models are prepared before accepting requests
     if _model_thread.is_alive():
         logger.info("Waiting for model preparation thread to finish...")
         _model_thread.join(timeout=60)
-    app.run(host="0.0.0.0", port=port, debug=False)
+
+    if DEPLOYMENT_TARGET == "huggingface":
+        # Run Gradio interface for Hugging Face Spaces
+        logger.info("Starting Gradio interface for Hugging Face deployment")
+        demo = create_gradio_interface()
+        if demo:
+            demo.launch()
+        else:
+            logger.error("Failed to create Gradio interface")
+    else:
+        # Run Flask app for Render or development
+        logger.info(f"Starting Flask app for {DEPLOYMENT_TARGET} deployment")
+        port = int(os.environ.get("PORT", 10000))
+        app.run(host="0.0.0.0", port=port, debug=False)
