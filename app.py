@@ -1,149 +1,91 @@
 import os
-import uuid
+import io
 import logging
+import requests
+from flask import Flask, request, send_file, jsonify
 
-import torch
-import gdown
-from PIL import Image
-import gradio as gr
-
-# Model loaders
-from background.model_loader import load_u2net, predict_mask
-from background.background_removal import (
-    composite_foreground_with_bg,
-    refine_mask,
-    load_template_background
-)
-from object.infer import (
-    load_object_model,
-    run_migan_inference,
-    grabcut_with_brush,
-)
-
-# ================= CONFIG =================
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("pixerase")
+logger = logging.getLogger("pixerase-backend")
 
-torch.set_num_threads(int(os.environ.get("TORCH_THREADS", "1")))
-torch.set_grad_enabled(False)
+# Environment configuration
+HF_API_TOKEN = os.environ.get("HF_API_TOKEN")
+HF_BG_MODEL = os.environ.get("HF_BG_MODEL")
+HF_OBJ_MODEL = os.environ.get("HF_OBJ_MODEL")
 
-DEVICE = torch.device("cpu")
+if not HF_API_TOKEN:
+    logger.warning("HF_API_TOKEN not set — Hugging Face requests will fail without it")
 
-MODELS_DIR = "models"
-os.makedirs(MODELS_DIR, exist_ok=True)
-
-BG_MODEL_PATH = os.path.join(MODELS_DIR, "u2net.pth")
-OBJECT_MODEL_PATH = os.path.join(MODELS_DIR, "migan.pt")
-
-BG_MODEL_FILE_ID = os.environ.get("BG_MODEL_FILE_ID")
-OBJECT_MODEL_FILE_ID = os.environ.get("OBJECT_MODEL_FILE_ID")
-
-bg_model = None
-migan_model = None
-
-# ================= DOWNLOAD =================
-
-def download_model(file_id, path):
-    if os.path.exists(path):
-        return
-    if not file_id:
-        raise ValueError(f"Missing FILE_ID for {path}")
-    url = f"https://drive.google.com/uc?id={file_id}"
-    logger.info(f"Downloading {path}")
-    gdown.download(url, path, quiet=False)
-
-# ================= LOAD =================
-
-def load_models():
-    global bg_model, migan_model
-
-    if bg_model is None:
-        download_model(BG_MODEL_FILE_ID, BG_MODEL_PATH)
-        bg_model = load_u2net(BG_MODEL_PATH, device="cpu")
-        bg_model.eval()
-
-    if migan_model is None:
-        download_model(OBJECT_MODEL_FILE_ID, OBJECT_MODEL_PATH)
-        migan_model = load_object_model(OBJECT_MODEL_PATH, device="cpu")
-        migan_model.eval()
-
-# ================= FUNCTIONS =================
-
-def remove_background(image, bg_template):
-    load_models()
-
-    if image is None:
-        raise gr.Error("Upload image")
-
-    image = image.convert("RGB")
-
-    bg_img = None
-    if bg_template and bg_template != "None":
-        bg_img = load_template_background(bg_template, "backgrounds")
-
-    with torch.no_grad():
-        mask = predict_mask(bg_model, image)
-        mask = refine_mask(mask)
-        result = composite_foreground_with_bg(image, mask, bg_img)
-
-    return result
+app = Flask(__name__)
 
 
-def remove_object(image, mask):
-    load_models()
+def call_hf_inference(model_id: str, file_bytes: bytes, params: dict = None):
+    """Call the Hugging Face Inference API for a model.
 
-    if image is None or mask is None:
-        raise gr.Error("Upload image + mask")
+    Sends the image bytes as application/octet-stream. Returns (content, content_type).
+    """
+    if not model_id:
+        raise ValueError("Model id is not configured")
 
-    import tempfile
+    url = f"https://api-inference.huggingface.co/models/{model_id}"
+    headers = {"Authorization": f"Bearer {HF_API_TOKEN}"} if HF_API_TOKEN else {}
 
-    with tempfile.TemporaryDirectory() as tmp:
-        inp = os.path.join(tmp, "input.png")
-        msk = os.path.join(tmp, "mask.png")
-        out = os.path.join(tmp, "out.png")
+    try:
+        resp = requests.post(url, headers=headers, data=file_bytes, timeout=60)
+    except requests.RequestException as e:
+        logger.exception("Error calling Hugging Face inference API")
+        raise
 
-        image.save(inp)
-        mask.save(msk)
+    if resp.status_code != 200:
+        logger.error("HF inference failed: %s %s", resp.status_code, resp.text[:200])
+        raise RuntimeError(f"HF inference failed: {resp.status_code}")
 
-        final_mask = grabcut_with_brush(inp, msk)
+    return resp.content, resp.headers.get("content-type", "application/octet-stream")
 
-        with torch.no_grad():
-            run_migan_inference(
-                migan_model,
-                inp,
-                final_mask,
-                out,
-                device="cpu"
-            )
 
-        return Image.open(out)
+@app.route("/api/health")
+def health():
+    return jsonify({"status": "ok"})
 
-# ================= UI =================
 
-def create_ui():
-    with gr.Blocks() as demo:
-        gr.Markdown("# Pixerase AI")
+@app.route("/api/remove_background", methods=["POST"])
+def remove_background_api():
+    if "image" not in request.files:
+        return jsonify({"error": "image file is required (form field 'image')"}), 400
 
-        with gr.Tabs():
-            with gr.Tab("Background Removal"):
-                img = gr.Image(type="pil")
-                template = gr.Textbox(label="Template (optional)")
-                out = gr.Image()
+    f = request.files["image"]
+    img_bytes = f.read()
 
-                btn = gr.Button("Process")
-                btn.click(remove_background, [img, template], out)
+    try:
+        content, ctype = call_hf_inference(HF_BG_MODEL, img_bytes)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-            with gr.Tab("Object Removal"):
-                img = gr.Image(type="pil")
-                mask = gr.Image(type="pil")
-                out = gr.Image()
+    if ctype.startswith("image/"):
+        return send_file(io.BytesIO(content), mimetype=ctype)
+    # otherwise return raw content
+    return (content, 200, {"Content-Type": ctype})
 
-                btn = gr.Button("Process")
-                btn.click(remove_object, [img, mask], out)
 
-    return demo
+@app.route("/api/remove_object", methods=["POST"])
+def remove_object_api():
+    if "image" not in request.files:
+        return jsonify({"error": "image file is required (form field 'image')"}), 400
 
-# ================= RUN =================
+    f = request.files["image"]
+    img_bytes = f.read()
 
-demo = create_ui()
-demo.launch()
+    # if client provided a mask file, forward it in a multipart form if needed by model
+    # For now we send only the image bytes — adapt if your HF model expects multipart inputs.
+    try:
+        content, ctype = call_hf_inference(HF_OBJ_MODEL, img_bytes)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    if ctype.startswith("image/"):
+        return send_file(io.BytesIO(content), mimetype=ctype)
+    return (content, 200, {"Content-Type": ctype})
+
+
+if __name__ == "__main__":
+    # Local debug server
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

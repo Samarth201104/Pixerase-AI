@@ -1,63 +1,42 @@
 /**
- * API Service - UPDATED FOR HUGGING FACE SPACES DEPLOYMENT
- * Both Background Removal and Object Removal now run on HF Spaces via Gradio
+ * API Service - calls the Render backend API.
+ * Set `API_BASE_URL` to your Render instance URL (e.g. https://my-app.onrender.com)
  */
 
 const API_CONFIG = {
-    // Hugging Face Spaces URLs for both services
-    HF_SPACES_URL: 'https://your-huggingface-username-pixerase-ai.hf.space',
-    TIMEOUT: 30000,
-    MAX_RETRIES: 2
+    API_BASE_URL: window.__API_BASE__ || 'https://RENDER_APP.onrender.com',
+    TIMEOUT: 60000,
 };
 
 class APIService {
     constructor() {
-        this.isHFConnected = true; // Always assume HF is available (handled by redirects)
-        this.connectionCheckInterval = null;
+        this.base = API_CONFIG.API_BASE_URL.replace(/\/$/, '');
     }
 
-    /**
-     * Get Hugging Face Spaces URL for background removal
-     */
-    getBackgroundRemovalURL() {
-        return API_CONFIG.HF_SPACES_URL;
-    }
-
-    /**
-     * Get Hugging Face Spaces URL for object removal
-     */
-    getObjectRemovalURL() {
-        return API_CONFIG.HF_SPACES_URL;
-    }
-
-    /**
-     * Process image - redirects to HF Spaces
-     * Both modes use the same Gradio interface
-     */
     async processImage(imageBlob, mode, maskBlob = null) {
-        if (mode === "bg" || mode === "background") {
-            // Redirect to HF Spaces for background removal
-            window.open(this.getBackgroundRemovalURL(), '_blank');
-            return { redirected: true, url: this.getBackgroundRemovalURL() };
-        } else if (mode === "object") {
-            // Redirect to HF Spaces for object removal
-            window.open(this.getObjectRemovalURL(), '_blank');
-            return { redirected: true, url: this.getObjectRemovalURL() };
-        } else {
-            throw new Error("Invalid processing mode. Use 'background' or 'object'");
+        const form = new FormData();
+        form.append('image', imageBlob, 'image.png');
+        if (maskBlob) form.append('mask', maskBlob, 'mask.png');
+
+        const endpoint = mode === 'object' ? '/api/remove_object' : '/api/remove_background';
+        const url = this.base + endpoint;
+
+        const resp = await fetch(url, { method: 'POST', body: form });
+        if (!resp.ok) {
+            const txt = await resp.text();
+            throw new Error(`Processing failed: ${resp.status} ${txt}`);
         }
+
+        const blob = await resp.blob();
+        return { blob };
     }
 
-    /**
-     * Check HF connection status (always true since we use web redirects)
-     */
-    checkHFConnection() {
-        this.isHFConnected = true;
-    }
-
-    destroy() {
-        if (this.connectionCheckInterval) {
-            clearInterval(this.connectionCheckInterval);
+    async health() {
+        try {
+            const res = await fetch(this.base + '/api/health');
+            return res.ok;
+        } catch (e) {
+            return false;
         }
     }
 }

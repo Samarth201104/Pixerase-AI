@@ -1,6 +1,14 @@
 # Pixerase.AI - AI-Powered Image Editing
 
-Pixerase.AI is an advanced AI-powered image editing tool designed for seamless background removal and object inpainting. The application is deployed on **Hugging Face Spaces** with a unified Gradio interface.
+Pixerase.AI is an advanced AI-powered image editing tool designed for seamless background removal and object inpainting.
+
+Deployment architecture (recommended):
+
+- Frontend: Vercel (static site from `frontend/`)
+- Backend: Render (Flask API `/api/*` endpoints in `app.py`)
+- Models & inference: Hugging Face (models hosted as Inference API or Endpoints)
+
+This repository contains both the frontend and backend; heavy model weights should be hosted on Hugging Face (or external storage) and not kept inside the repo for deployment.
 
 ## 🌟 Features
 
